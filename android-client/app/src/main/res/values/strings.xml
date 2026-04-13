@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">CableCanvas</string>
+    <string name="frame_content_description">Streamed frame</string>
+    <string name="status_connecting">Connecting...</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_disconnected">Disconnected; retrying...</string>
+</resources>
