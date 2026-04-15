@@ -5,13 +5,11 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <ImageView
-        android:id="@+id/frameView"
+    <SurfaceView
+        android:id="@+id/videoSurface"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:adjustViewBounds="true"
-        android:contentDescription="@string/frame_content_description"
-        android:scaleType="fitCenter" />
+        android:keepScreenOn="true" />
 
     <TextView
         android:id="@+id/statusView"
@@ -26,4 +24,3 @@
         android:textSize="14sp" />
 
 </FrameLayout>
-

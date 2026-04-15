@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Android / Gradle
+android-client/.gradle/
+android-client/local.properties
+android-client/**/build/
+
+# Swift Package
+mac-host/.build/

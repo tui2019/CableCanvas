@@ -10,7 +10,7 @@ class FrameStreamClient(
 ) : Closeable {
     private val connection: TransportConnection = transport.connect()
 
-    fun readFrames(onFrame: (ByteArray) -> Unit) {
+    fun readFrames(onFrame: (FrameProtocol.Frame) -> Unit) {
         while (true) {
             val frame = FrameProtocol.readFrame(connection.input)
             onFrame(frame)
@@ -21,4 +21,3 @@ class FrameStreamClient(
         connection.close()
     }
 }
-
