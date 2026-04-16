@@ -94,16 +94,12 @@ bool cc_create_virtual_display(
 
         gDescriptor = [[CGVirtualDisplayDescriptor alloc] init];
         gDescriptor.name = name;
-        gDescriptor.maxPixelsWide = width;
-        gDescriptor.maxPixelsHigh = height;
+        gDescriptor.maxPixelsWide = hi_dpi ? (width * 2) : width;
+        gDescriptor.maxPixelsHigh = hi_dpi ? (height * 2) : height;
 
-        double ppiValue = (ppi < 72) ? 110.0 : static_cast<double>(ppi);
-        if (hi_dpi) {
-            ppiValue = std::max(72.0, ppiValue / 2.0);
-        } else {
-            ppiValue = 140.0;
-        }
+        double ppiValue = (ppi < 160) ? 220.0 : static_cast<double>(ppi);
         double ratio = 25.4 / ppiValue;
+        
         gDescriptor.sizeInMillimeters = CGSizeMake(width * ratio, height * ratio);
 
         unsigned int stableHash = hashString([name UTF8String]);
@@ -121,17 +117,37 @@ bool cc_create_virtual_display(
         gSettings = [[CGVirtualDisplaySettings alloc] init];
         gSettings.hiDPI = hi_dpi ? 1 : 0;
 
+        NSMutableArray<CGVirtualDisplayMode*>* modes = [[NSMutableArray alloc] init];
+        
         if (hi_dpi) {
-            NSUInteger lowW = std::max(static_cast<NSUInteger>(width / 2), static_cast<NSUInteger>(1));
-            NSUInteger lowH = std::max(static_cast<NSUInteger>(height / 2), static_cast<NSUInteger>(1));
-            CGVirtualDisplayMode* lowMode =
-                [[CGVirtualDisplayMode alloc] initWithWidth:lowW height:lowH refreshRate:refreshRate];
-            gSettings.modes = @[lowMode];
+            // Provide modes so macOS can use them for different Retina scaling options.
+            // ScreenCaptureKit will downscale/upscale these back to the native tablet resolution.
+            
+            // "Default" Retina (2.0x logical UI scale)
+            [modes addObject:[[CGVirtualDisplayMode alloc] initWithWidth:width height:height refreshRate:refreshRate]];
+            
+            // 2.2x logical UI scale
+            [modes addObject:[[CGVirtualDisplayMode alloc] initWithWidth:(uint32_t)(width * 0.9) height:(uint32_t)(height * 0.9) refreshRate:refreshRate]];
+            
+            // 2.5x logical UI scale
+            [modes addObject:[[CGVirtualDisplayMode alloc] initWithWidth:(uint32_t)(width * 0.8) height:(uint32_t)(height * 0.8) refreshRate:refreshRate]];
+            
+            // 2.85x logical UI scale
+            [modes addObject:[[CGVirtualDisplayMode alloc] initWithWidth:(uint32_t)(width * 0.7) height:(uint32_t)(height * 0.7) refreshRate:refreshRate]];
+            
+            // 3.0x logical UI scale (e.g. 1333p for 2000p display)
+            [modes addObject:[[CGVirtualDisplayMode alloc] initWithWidth:(uint32_t)(width * 0.6666) height:(uint32_t)(height * 0.6666) refreshRate:refreshRate]];
+
+            // 3.33x logical UI scale
+            [modes addObject:[[CGVirtualDisplayMode alloc] initWithWidth:(uint32_t)(width * 0.6) height:(uint32_t)(height * 0.6) refreshRate:refreshRate]];
+            
+            // 4.0x logical UI scale
+            [modes addObject:[[CGVirtualDisplayMode alloc] initWithWidth:(uint32_t)(width * 0.5) height:(uint32_t)(height * 0.5) refreshRate:refreshRate]];
         } else {
-            CGVirtualDisplayMode* mode =
-                [[CGVirtualDisplayMode alloc] initWithWidth:width height:height refreshRate:refreshRate];
-            gSettings.modes = @[mode];
+            [modes addObject:[[CGVirtualDisplayMode alloc] initWithWidth:width height:height refreshRate:refreshRate]];
         }
+        
+        gSettings.modes = modes;
 
         if (![gDisplay applySettings:gSettings]) {
             cleanupDisplay();

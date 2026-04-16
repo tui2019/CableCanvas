@@ -24,12 +24,14 @@ enum FrameSourceFactory {
             return DisplayFrameSource(
                 targetFps: max(settings.fps, 1.0),
                 sourceName: "main display",
+                settings: settings,
                 targetDisplayID: { CGMainDisplayID() }
             )
         case .virtualDisplay:
             return DisplayFrameSource(
                 targetFps: max(settings.fps, 1.0),
                 sourceName: "virtual display",
+                settings: settings,
                 targetDisplayID: { CGDirectDisplayID(VirtualDisplayManager.displayID) }
             )
         }
@@ -77,6 +79,7 @@ private final class DisplayFrameSource: NSObject, FrameSource, SCStreamOutput, S
     private let targetFps: Double
     private let sourceName: String
     private let targetDisplayID: () -> CGDirectDisplayID
+    private let settings: AppSettings
     private let outputQueue = DispatchQueue(label: "com.cablecanvas.screencapture.output")
     private let stateQueue = DispatchQueue(label: "com.cablecanvas.screencapture.state")
     private let logger = Logger(subsystem: "CableCanvasHost", category: "FrameSource")
@@ -88,9 +91,10 @@ private final class DisplayFrameSource: NSObject, FrameSource, SCStreamOutput, S
     private var captureWidth = 0
     private var captureHeight = 0
 
-    init(targetFps: Double, sourceName: String, targetDisplayID: @escaping () -> CGDirectDisplayID) {
+    init(targetFps: Double, sourceName: String, settings: AppSettings, targetDisplayID: @escaping () -> CGDirectDisplayID) {
         self.targetFps = targetFps
         self.sourceName = sourceName
+        self.settings = settings
         self.targetDisplayID = targetDisplayID
         super.init()
     }
@@ -148,19 +152,39 @@ private final class DisplayFrameSource: NSObject, FrameSource, SCStreamOutput, S
 
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let config = SCStreamConfiguration()
-            config.width = display.width
-            config.height = display.height
-            self.captureWidth = display.width
-            self.captureHeight = display.height
+            
+            let targetWidth: Int
+            let targetHeight: Int
+            
+            if self.settings.streamSource == .virtualDisplay {
+                // Force output to the tablet's exact native resolution, regardless of UI scale.
+                // ScreenCaptureKit will automatically downscale the high-res Retina backing store
+                // to this exact resolution, giving perfectly sharp text and a variable UI size.
+                targetWidth = self.settings.virtualDisplayWidth
+                targetHeight = self.settings.virtualDisplayHeight
+                config.scalesToFit = true
+            } else {
+                let displayID = self.targetDisplayID()
+                let mode = CGDisplayCopyDisplayMode(displayID)
+                targetWidth = mode?.pixelWidth ?? display.width
+                targetHeight = mode?.pixelHeight ?? display.height
+                config.scalesToFit = false
+            }
+            
+            config.width = targetWidth
+            config.height = targetHeight
+            
+            self.captureWidth = targetWidth
+            self.captureHeight = targetHeight
             do {
-                try self.codec.prepare(width: display.width, height: display.height, fps: self.targetFps)
+                try self.codec.prepare(width: targetWidth, height: targetHeight, fps: self.targetFps)
             } catch {
                 setupError = error
                 setupSemaphore.signal()
                 return
             }
             self.logger.info(
-                "starting capture source=\(self.sourceName, privacy: .public) displayID=\(display.displayID) size=\(display.width)x\(display.height)"
+                "starting capture source=\(self.sourceName, privacy: .public) displayID=\(display.displayID) output=\(targetWidth)x\(targetHeight) points=\(display.width)x\(display.height)"
             )
             config.minimumFrameInterval = CMTime(
                 value: 1,

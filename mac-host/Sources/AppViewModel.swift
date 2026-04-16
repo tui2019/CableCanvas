@@ -45,8 +45,7 @@ final class AppViewModel: ObservableObject {
             loadedSettings.streamSource = .virtualDisplay
             settingsStore.save(loadedSettings)
         }
-        if loadedSettings.virtualDisplayHiDPI || loadedSettings.virtualDisplayMirrorMain {
-            loadedSettings.virtualDisplayHiDPI = false
+        if loadedSettings.virtualDisplayMirrorMain {
             loadedSettings.virtualDisplayMirrorMain = false
             settingsStore.save(loadedSettings)
         }
@@ -144,7 +143,6 @@ final class AppViewModel: ObservableObject {
     }
 
     func createVirtualDisplay() {
-        settings.virtualDisplayHiDPI = false
         settings.virtualDisplayMirrorMain = false
         settings.virtualDisplayRefreshRate = 30
 
