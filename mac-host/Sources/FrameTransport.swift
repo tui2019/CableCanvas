@@ -16,6 +16,8 @@ final class TcpFrameTransportServer: FrameTransportServer, @unchecked Sendable {
     private var listener: NWListener?
     private var connection: NWConnection?
     private var handshakeComplete = false
+    private var sendInFlight = false
+    private var pendingPacket: Data?
 
     var hasClient: Bool {
         queue.sync { connection != nil && handshakeComplete }
@@ -43,16 +45,17 @@ final class TcpFrameTransportServer: FrameTransportServer, @unchecked Sendable {
     func send(_ packet: Data) {
         queue.async { [weak self] in
             guard let self else { return }
-            guard let connection = self.connection, self.handshakeComplete else { return }
-            connection.send(content: packet, completion: .contentProcessed { sendError in
-                _ = sendError
-            })
+            guard self.connection != nil, self.handshakeComplete else { return }
+            self.pendingPacket = packet
+            self.flushPendingPacketIfPossible()
         }
     }
 
     func stop() {
         queue.sync {
             handshakeComplete = false
+            sendInFlight = false
+            pendingPacket = nil
             connection?.cancel()
             connection = nil
             listener?.cancel()
@@ -62,9 +65,15 @@ final class TcpFrameTransportServer: FrameTransportServer, @unchecked Sendable {
     }
 
     private func attachConnection(_ newConnection: NWConnection) {
+        if connection != nil, handshakeComplete {
+            newConnection.cancel()
+            return
+        }
         if let existing = connection { existing.cancel() }
         connection = newConnection
         handshakeComplete = false
+        sendInFlight = false
+        pendingPacket = nil
 
         newConnection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
@@ -97,6 +106,7 @@ final class TcpFrameTransportServer: FrameTransportServer, @unchecked Sendable {
             }
             self.handshakeComplete = true
             self.onClientConnectionChanged?(true)
+            self.flushPendingPacketIfPossible()
         }
     }
     private func clearConnection(ifMatches target: NWConnection) {
@@ -104,9 +114,27 @@ final class TcpFrameTransportServer: FrameTransportServer, @unchecked Sendable {
             guard let self else { return }
             guard self.connection === target else { return }
             self.handshakeComplete = false
+            self.sendInFlight = false
+            self.pendingPacket = nil
             self.connection?.cancel()
             self.connection = nil
             self.onClientConnectionChanged?(false)
         }
+    }
+
+    private func flushPendingPacketIfPossible() {
+        guard !sendInFlight else { return }
+        guard handshakeComplete, let connection = connection else { return }
+        guard let packet = pendingPacket else { return }
+
+        pendingPacket = nil
+        sendInFlight = true
+        connection.send(content: packet, completion: .contentProcessed { [weak self] _ in
+            guard let self else { return }
+            self.queue.async {
+                self.sendInFlight = false
+                self.flushPendingPacketIfPossible()
+            }
+        })
     }
 }

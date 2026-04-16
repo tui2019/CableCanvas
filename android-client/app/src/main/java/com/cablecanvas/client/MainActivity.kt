@@ -6,8 +6,12 @@ import android.os.Bundle
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.WindowManager
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.cablecanvas.client.protocol.FrameProtocol
 import com.cablecanvas.client.stream.FrameStreamClient
 import com.cablecanvas.client.transport.AdbTcpTransport
@@ -34,10 +38,25 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
         surfaceView = findViewById(R.id.videoSurface)
         statusView = findViewById(R.id.statusView)
         surfaceView.holder.addCallback(this)
+        enterImmersiveMode()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        enterImmersiveMode()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            enterImmersiveMode()
+        }
     }
 
     override fun onDestroy() {
@@ -177,20 +196,39 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private fun drainDecoder() {
         val codec = decoder ?: return
         val bufferInfo = MediaCodec.BufferInfo()
+        var lastOutputIndex = -1
+        var lastPtsUs = 0L
         while (true) {
             val outputIndex = codec.dequeueOutputBuffer(bufferInfo, 0)
             when {
                 outputIndex >= 0 -> {
-                    codec.releaseOutputBuffer(outputIndex, true)
-                    if (frameCounter <= 5L || frameCounter % 120L == 0L) {
-                        Log.i(logTag, "Rendered output buffer, pts=${bufferInfo.presentationTimeUs}")
+                    if (lastOutputIndex >= 0) {
+                        codec.releaseOutputBuffer(lastOutputIndex, false)
                     }
+                    lastOutputIndex = outputIndex
+                    lastPtsUs = bufferInfo.presentationTimeUs
                 }
                 outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     Log.i(logTag, "Output format changed: ${codec.outputFormat}")
                 }
-                outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> return
-                else -> return
+                outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                    if (lastOutputIndex >= 0) {
+                        codec.releaseOutputBuffer(lastOutputIndex, true)
+                        if (frameCounter <= 5L || frameCounter % 120L == 0L) {
+                            Log.i(logTag, "Rendered output buffer, pts=$lastPtsUs")
+                        }
+                    }
+                    return
+                }
+                else -> {
+                    if (lastOutputIndex >= 0) {
+                        codec.releaseOutputBuffer(lastOutputIndex, true)
+                        if (frameCounter <= 5L || frameCounter % 120L == 0L) {
+                            Log.i(logTag, "Rendered output buffer, pts=$lastPtsUs")
+                        }
+                    }
+                    return
+                }
             }
         }
     }
@@ -258,5 +296,11 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         runOnUiThread {
             statusView.text = text
         }
+    }
+
+    private fun enterImmersiveMode() {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 }

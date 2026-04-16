@@ -159,6 +159,15 @@ final class AdbService: @unchecked Sendable {
         return resolved
     }
 
+    func queryDeviceDensityDpi(serial: String) -> Int? {
+        let densityOutput = run(["-s", serial, "shell", "wm", "density"], timeout: 2)
+        if let parsed = parseDensityDpi(from: densityOutput) {
+            logger.info("density probe serial=\(serial, privacy: .public) wmDensity=\(parsed)")
+            return parsed
+        }
+        return nil
+    }
+
     private func describeResolution(_ value: (width: Int, height: Int)?) -> String {
         guard let value else { return "n/a" }
         return "\(value.width)x\(value.height)"
@@ -292,6 +301,24 @@ final class AdbService: @unchecked Sendable {
             return (resolution.height, resolution.width)
         }
         return resolution
+    }
+
+    private func parseDensityDpi(from output: String) -> Int? {
+        var parsed: Int?
+        for line in output.split(separator: "\n") {
+            guard let range = line.range(of: #"(\d+)"#, options: .regularExpression) else {
+                continue
+            }
+            let token = String(line[range])
+            guard let value = Int(token), value >= 72, value <= 1000 else {
+                continue
+            }
+            parsed = value
+            if line.lowercased().contains("override") {
+                return value
+            }
+        }
+        return parsed
     }
 
     @discardableResult

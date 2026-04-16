@@ -12,6 +12,7 @@ bool cc_create_virtual_display(
     uint32_t width,
     uint32_t height,
     uint32_t refresh_rate,
+    uint32_t ppi,
     bool hi_dpi,
     bool mirror_main,
     const char* display_name

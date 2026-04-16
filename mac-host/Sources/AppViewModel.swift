@@ -29,20 +29,24 @@ final class AppViewModel: ObservableObject {
     init() {
         let settingsStore = SettingsStore()
         var loadedSettings = settingsStore.load()
-        if loadedSettings.fps == 10.0 || loadedSettings.fps == 60.0 {
+        if loadedSettings.fps != 30.0 {
             loadedSettings.fps = 30.0
             settingsStore.save(loadedSettings)
         }
-        if loadedSettings.virtualDisplayRefreshRate == 60 {
+        if loadedSettings.virtualDisplayRefreshRate != 30 {
             loadedSettings.virtualDisplayRefreshRate = 30
+            settingsStore.save(loadedSettings)
+        }
+        if loadedSettings.virtualDisplayPpi <= 0 {
+            loadedSettings.virtualDisplayPpi = 110
             settingsStore.save(loadedSettings)
         }
         if loadedSettings.streamSource != .virtualDisplay {
             loadedSettings.streamSource = .virtualDisplay
             settingsStore.save(loadedSettings)
         }
-        if !loadedSettings.virtualDisplayHiDPI || loadedSettings.virtualDisplayMirrorMain {
-            loadedSettings.virtualDisplayHiDPI = true
+        if loadedSettings.virtualDisplayHiDPI || loadedSettings.virtualDisplayMirrorMain {
+            loadedSettings.virtualDisplayHiDPI = false
             loadedSettings.virtualDisplayMirrorMain = false
             settingsStore.save(loadedSettings)
         }
@@ -140,8 +144,9 @@ final class AppViewModel: ObservableObject {
     }
 
     func createVirtualDisplay() {
-        settings.virtualDisplayHiDPI = true
+        settings.virtualDisplayHiDPI = false
         settings.virtualDisplayMirrorMain = false
+        settings.virtualDisplayRefreshRate = 30
 
         let serial = lastDetectedSerial ?? adbService.firstConnectedDeviceSerial()
         guard let serial else {
@@ -156,20 +161,29 @@ final class AppViewModel: ObservableObject {
         }
         settings.virtualDisplayWidth = deviceResolution.width
         settings.virtualDisplayHeight = deviceResolution.height
-        statusText = "Using tablet resolution \(deviceResolution.width)x\(deviceResolution.height)."
+        if let deviceDensityDpi = adbService.queryDeviceDensityDpi(serial: serial) {
+            settings.virtualDisplayPpi = deviceDensityDpi
+            statusText = "Using tablet profile \(settings.virtualDisplayWidth)x\(settings.virtualDisplayHeight) @ \(deviceDensityDpi)dpi."
+            logger.info(
+                "dpi profile serial=\(serial, privacy: .public) dpi=\(deviceDensityDpi) resolution=\(self.settings.virtualDisplayWidth)x\(self.settings.virtualDisplayHeight)"
+            )
+        } else {
+            statusText = "Using tablet resolution \(deviceResolution.width)x\(deviceResolution.height)."
+        }
         logger.info(
             "createVirtualDisplay serial=\(serial, privacy: .public) resolved=\(deviceResolution.width)x\(deviceResolution.height) hidpi=\(self.settings.virtualDisplayHiDPI) mirror=\(self.settings.virtualDisplayMirrorMain)"
         )
 
         saveSettings()
-        let config = VirtualDisplayConfig(
-            name: settings.virtualDisplayName,
-            width: settings.virtualDisplayWidth,
-            height: settings.virtualDisplayHeight,
-            refreshRate: settings.virtualDisplayRefreshRate,
-            hiDPI: settings.virtualDisplayHiDPI,
-            mirrorMain: settings.virtualDisplayMirrorMain
-        )
+            let config = VirtualDisplayConfig(
+                name: settings.virtualDisplayName,
+                width: settings.virtualDisplayWidth,
+                height: settings.virtualDisplayHeight,
+                refreshRate: settings.virtualDisplayRefreshRate,
+                ppi: settings.virtualDisplayPpi,
+                hiDPI: settings.virtualDisplayHiDPI,
+                mirrorMain: settings.virtualDisplayMirrorMain
+            )
 
         let ok = VirtualDisplayManager.create(config: config)
         isVirtualDisplayActive = VirtualDisplayManager.isActive
@@ -364,6 +378,8 @@ final class AppViewModel: ObservableObject {
     }
 
     private func startStreamingFlow(createVirtualDisplayIfNeeded: Bool) async {
+        settings.fps = 30.0
+        settings.virtualDisplayRefreshRate = 30
         let adbService = self.adbService
         let serials = await runBlocking {
             adbService.connectedDeviceSerialsSnapshot()

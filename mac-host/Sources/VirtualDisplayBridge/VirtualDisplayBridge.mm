@@ -78,6 +78,7 @@ bool cc_create_virtual_display(
     uint32_t width,
     uint32_t height,
     uint32_t refresh_rate,
+    uint32_t ppi,
     bool hi_dpi,
     bool mirror_main,
     const char* display_name
@@ -96,9 +97,13 @@ bool cc_create_virtual_display(
         gDescriptor.maxPixelsWide = width;
         gDescriptor.maxPixelsHigh = height;
 
-        // Approximate physical size using typical desktop PPI.
-        double ppi = 110.0;
-        double ratio = 25.4 / ppi;
+        double ppiValue = (ppi < 72) ? 110.0 : static_cast<double>(ppi);
+        if (hi_dpi) {
+            ppiValue = std::max(72.0, ppiValue / 2.0);
+        } else {
+            ppiValue = 140.0;
+        }
+        double ratio = 25.4 / ppiValue;
         gDescriptor.sizeInMillimeters = CGSizeMake(width * ratio, height * ratio);
 
         unsigned int stableHash = hashString([name UTF8String]);
@@ -116,15 +121,15 @@ bool cc_create_virtual_display(
         gSettings = [[CGVirtualDisplaySettings alloc] init];
         gSettings.hiDPI = hi_dpi ? 1 : 0;
 
-        CGVirtualDisplayMode* mode =
-            [[CGVirtualDisplayMode alloc] initWithWidth:width height:height refreshRate:refreshRate];
         if (hi_dpi) {
             NSUInteger lowW = std::max(static_cast<NSUInteger>(width / 2), static_cast<NSUInteger>(1));
             NSUInteger lowH = std::max(static_cast<NSUInteger>(height / 2), static_cast<NSUInteger>(1));
             CGVirtualDisplayMode* lowMode =
                 [[CGVirtualDisplayMode alloc] initWithWidth:lowW height:lowH refreshRate:refreshRate];
-            gSettings.modes = @[mode, lowMode];
+            gSettings.modes = @[lowMode];
         } else {
+            CGVirtualDisplayMode* mode =
+                [[CGVirtualDisplayMode alloc] initWithWidth:width height:height refreshRate:refreshRate];
             gSettings.modes = @[mode];
         }
 
