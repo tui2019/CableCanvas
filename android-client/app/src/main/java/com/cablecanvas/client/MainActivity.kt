@@ -164,6 +164,13 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         format.setByteBuffer("csd-0", ByteBuffer.wrap(sps))
         format.setByteBuffer("csd-1", ByteBuffer.wrap(pps))
         format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, width * height)
+        
+        // Configure decoder for low latency and high operating rate
+        try {
+            format.setInteger("low-latency", 1)
+            format.setInteger("operating-rate", 120)
+        } catch (_: Exception) {}
+        
         val codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         codec.configure(format, surfaceView.holder.surface, null, 0)
         codec.start()

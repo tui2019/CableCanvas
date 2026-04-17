@@ -33,7 +33,10 @@ final class TcpFrameTransportServer: FrameTransportServer, @unchecked Sendable {
             )
         }
 
-        let parameters = NWParameters.tcp
+        let tcpOptions = NWProtocolTCP.Options()
+        tcpOptions.noDelay = true
+        let parameters = NWParameters(tls: nil, tcp: tcpOptions)
+        
         let listener = try NWListener(using: parameters, on: nwPort)
         listener.newConnectionHandler = { [weak self] newConnection in
             self?.attachConnection(newConnection)

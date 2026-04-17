@@ -349,6 +349,23 @@ private final class H264Encoder: @unchecked Sendable {
             let cf = CFNumberCreate(nil, .sInt32Type, ptr)
             VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: cf)
         }
+        
+        // Limit bitrate to 16 Mbps to prevent TCP buffer bloat and latency spikes
+        let bitRate = 16_000_000
+        var bitRateValue = Int32(bitRate)
+        if let cfBitRate = CFNumberCreate(nil, .sInt32Type, &bitRateValue) {
+            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: cfBitRate)
+        }
+        
+        // Limit data rate (bytes per second)
+        var dataLimitBytes = Int32(bitRate / 8)
+        var dataLimitSeconds = Int32(1)
+        if let cfBytes = CFNumberCreate(nil, .sInt32Type, &dataLimitBytes),
+           let cfSeconds = CFNumberCreate(nil, .sInt32Type, &dataLimitSeconds) {
+            let limitsArray = [cfBytes, cfSeconds] as CFArray
+            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_DataRateLimits, value: limitsArray)
+        }
+
         VTCompressionSessionPrepareToEncodeFrames(session)
         self.session = session
         frameIndex = 0
