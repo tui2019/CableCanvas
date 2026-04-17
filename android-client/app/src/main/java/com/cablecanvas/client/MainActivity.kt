@@ -1,13 +1,13 @@
 package com.cablecanvas.client
 
-import android.graphics.PixelFormat
+import android.graphics.SurfaceTexture
 import android.media.MediaCodec
 import android.media.MediaFormat
-import android.os.Bundle
 import android.os.Build
+import android.os.Bundle
 import android.util.Log
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.view.Surface
+import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
@@ -22,7 +22,7 @@ import com.cablecanvas.client.transport.AdbTcpTransport
 import com.cablecanvas.client.ui.ConnectingScreen
 import java.nio.ByteBuffer
 
-class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
+class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
     private val logTag = "CableCanvas"
 
     @Volatile
@@ -32,9 +32,11 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var surfaceReady = false
 
     private var decoder: MediaCodec? = null
-    private lateinit var surfaceView: SurfaceView
+    private lateinit var textureView: TextureView
     private lateinit var statusView: TextView
     private lateinit var connectingComposeView: ComposeView
+
+    private var mediaSurface: Surface? = null // Holds the rendering surface for MediaCodec
     private var decoderWidth = 0
     private var decoderHeight = 0
     private var csdSps: ByteArray? = null
@@ -58,8 +60,13 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             window.attributes = window.attributes
         }
 
-        surfaceView = findViewById(R.id.videoSurface)
-        surfaceView.holder.setFormat(PixelFormat.TRANSPARENT)
+        textureView = findViewById(R.id.videoSurface)
+
+        // Ensure the TextureView allows the wallpaper to show through initially
+        textureView.isOpaque = false
+        textureView.alpha = 0f
+        textureView.surfaceTextureListener = this
+
         statusView = findViewById(R.id.statusView)
         connectingComposeView = findViewById(R.id.connectingComposeView)
 
@@ -68,7 +75,6 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             ConnectingScreen()
         }
 
-        surfaceView.holder.addCallback(this)
         enterImmersiveMode()
     }
 
@@ -86,29 +92,48 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         running = false
         receiverThread?.interrupt()
         releaseDecoder()
+        mediaSurface?.release()
         Log.i(logTag, "MainActivity destroyed")
         super.onDestroy()
     }
 
-    override fun surfaceCreated(holder: SurfaceHolder) {
+    // ── TextureView.SurfaceTextureListener Callbacks ──────────────────────────
+
+    override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+        mediaSurface = Surface(surface)
         surfaceReady = true
         startReceiverLoopIfNeeded()
     }
 
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+    override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) = Unit
 
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
+    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
         surfaceReady = false
         releaseDecoder()
+        mediaSurface?.release()
+        mediaSurface = null
+        return true
     }
+
+    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
 
     // ── Connecting overlay helpers ─────────────────────────────────────────────
 
     private fun showConnectingOverlay(status: String) {
         runOnUiThread {
             if (connectingComposeView.visibility != View.VISIBLE) {
+                connectingComposeView.alpha = 1f // Reset alpha before showing
                 connectingComposeView.visibility = View.VISIBLE
             }
+
+            // Fade the frozen video frame out smoothly over 500ms
+            if (videoStarted) {
+                textureView.animate()
+                    .alpha(0f)
+                    .setDuration(500)
+                    .start()
+            }
+
             videoStarted = false
         }
     }
@@ -117,9 +142,16 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (videoStarted) return
         videoStarted = true
         runOnUiThread {
+            // 1. Fade IN the live video stream smoothly over 500ms
+            textureView.animate()
+                .alpha(1f)
+                .setDuration(500)
+                .start()
+
+            // 2. Fade OUT the spinner and scrim over 500ms
             connectingComposeView.animate()
                 .alpha(0f)
-                .setDuration(300)
+                .setDuration(500)
                 .withEndAction { connectingComposeView.visibility = View.GONE }
                 .start()
         }
@@ -213,7 +245,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         } catch (_: Exception) {}
 
         val codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        codec.configure(format, surfaceView.holder.surface, null, 0)
+        codec.configure(format, mediaSurface, null, 0)
         codec.start()
         decoder = codec
         decoderWidth = width
