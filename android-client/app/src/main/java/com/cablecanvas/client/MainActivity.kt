@@ -169,6 +169,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         try {
             format.setInteger("low-latency", 1)
             format.setInteger("operating-rate", 120)
+            format.setInteger("priority", 0) // 0 is real-time priority
         } catch (_: Exception) {}
         
         val codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)

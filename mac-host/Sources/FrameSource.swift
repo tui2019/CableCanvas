@@ -192,7 +192,8 @@ private final class DisplayFrameSource: NSObject, FrameSource, SCStreamOutput, S
             )
             config.showsCursor = true
             config.queueDepth = 3
-            config.pixelFormat = kCVPixelFormatType_32BGRA
+            // Use YUV420 directly to avoid color conversion overhead in the H264 encoder
+            config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
 
             let stream = SCStream(filter: filter, configuration: config, delegate: self)
             do {
@@ -343,6 +344,11 @@ private final class H264Encoder: @unchecked Sendable {
             value: kVTProfileLevel_H264_Baseline_AutoLevel
         )
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
+        
+        var expectedFps = Int32(round(max(fps, 1.0)))
+        if let cfFps = CFNumberCreate(nil, .sInt32Type, &expectedFps) {
+            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: cfFps)
+        }
         let maxKeyInterval = max(1, Int32(round(max(fps, 1.0))))
         var keyInterval = maxKeyInterval
         withUnsafePointer(to: &keyInterval) { ptr in
