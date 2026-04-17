@@ -1,20 +1,25 @@
 package com.cablecanvas.client
 
+import android.graphics.PixelFormat
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.os.Bundle
+import android.os.Build
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.cablecanvas.client.protocol.FrameProtocol
 import com.cablecanvas.client.stream.FrameStreamClient
 import com.cablecanvas.client.transport.AdbTcpTransport
+import com.cablecanvas.client.ui.ConnectingScreen
 import java.nio.ByteBuffer
 
 class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
@@ -29,6 +34,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var decoder: MediaCodec? = null
     private lateinit var surfaceView: SurfaceView
     private lateinit var statusView: TextView
+    private lateinit var connectingComposeView: ComposeView
     private var decoderWidth = 0
     private var decoderHeight = 0
     private var csdSps: ByteArray? = null
@@ -36,13 +42,32 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var receiverThread: Thread? = null
     private var frameCounter = 0L
 
+    /** True after the first decoded frame is rendered – hides the connecting overlay. */
+    @Volatile
+    private var videoStarted = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            window.attributes.blurBehindRadius = 64 // Adjust 1-100 for blur intensity
+            window.attributes = window.attributes
+        }
+
         surfaceView = findViewById(R.id.videoSurface)
+        surfaceView.holder.setFormat(PixelFormat.TRANSPARENT)
         statusView = findViewById(R.id.statusView)
+        connectingComposeView = findViewById(R.id.connectingComposeView)
+
+        // Inject the Compose UI
+        connectingComposeView.setContent {
+            ConnectingScreen()
+        }
+
         surfaceView.holder.addCallback(this)
         enterImmersiveMode()
     }
@@ -54,9 +79,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            enterImmersiveMode()
-        }
+        if (hasFocus) enterImmersiveMode()
     }
 
     override fun onDestroy() {
@@ -79,32 +102,52 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         releaseDecoder()
     }
 
-    private fun startReceiverLoopIfNeeded() {
-        if (receiverThread != null || !surfaceReady) {
-            return
+    // ── Connecting overlay helpers ─────────────────────────────────────────────
+
+    private fun showConnectingOverlay(status: String) {
+        runOnUiThread {
+            if (connectingComposeView.visibility != View.VISIBLE) {
+                connectingComposeView.visibility = View.VISIBLE
+            }
+            videoStarted = false
         }
+    }
+
+    private fun hideConnectingOverlay() {
+        if (videoStarted) return
+        videoStarted = true
+        runOnUiThread {
+            connectingComposeView.animate()
+                .alpha(0f)
+                .setDuration(300)
+                .withEndAction { connectingComposeView.visibility = View.GONE }
+                .start()
+        }
+    }
+
+    // ── Receiver loop ─────────────────────────────────────────────────────────
+
+    private fun startReceiverLoopIfNeeded() {
+        if (receiverThread != null || !surfaceReady) return
         Log.i(logTag, "Starting receiver loop")
         receiverThread = Thread {
             while (running) {
-                updateStatus(getString(R.string.status_connecting))
+                showConnectingOverlay(getString(R.string.status_connecting))
                 try {
                     FrameStreamClient(AdbTcpTransport()).use { client ->
                         Log.i(logTag, "Transport connected")
-                        updateStatus(getString(R.string.status_connected))
+                        showConnectingOverlay(getString(R.string.status_connected))
                         client.readFrames { frame ->
                             frameCounter += 1
                             if (frameCounter <= 5L || frameCounter % 120L == 0L) {
                                 Log.i(
                                     logTag,
-                                    "Frame #$frameCounter codec=${frame.codec} flags=${frame.flags} size=${frame.width}x${frame.height} bytes=${frame.payload.size}"
+                                    "Frame #$frameCounter codec=${frame.codec} flags=${frame.flags} " +
+                                        "size=${frame.width}x${frame.height} bytes=${frame.payload.size}"
                                 )
                             }
-                            if (frame.codec != FrameProtocol.Codec.H264) {
-                                return@readFrames
-                            }
-                            if (frame.width <= 0 || frame.height <= 0) {
-                                return@readFrames
-                            }
+                            if (frame.codec != FrameProtocol.Codec.H264) return@readFrames
+                            if (frame.width <= 0 || frame.height <= 0) return@readFrames
 
                             val nalUnits = parseAvccNalUnits(frame.payload)
                             if (nalUnits.isEmpty()) {
@@ -131,13 +174,14 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
                                 return@readFrames
                             }
                             queueFrame(accessUnit, frame.flags)
-                            drainDecoder()
+                            val rendered = drainDecoder()
+                            if (rendered) hideConnectingOverlay()
                         }
                     }
                 } catch (e: Exception) {
                     Log.e(logTag, "Receiver loop error", e)
                     releaseDecoder()
-                    updateStatus(getString(R.string.status_disconnected))
+                    showConnectingOverlay(getString(R.string.status_disconnected))
                     try {
                         Thread.sleep(1500)
                     } catch (_: InterruptedException) {
@@ -148,13 +192,11 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }.also { it.start() }
     }
 
+    // ── Decoder ───────────────────────────────────────────────────────────────
+
     private fun ensureDecoder(width: Int, height: Int) {
-        if (!surfaceReady) {
-            return
-        }
-        if (decoder != null && decoderWidth == width && decoderHeight == height) {
-            return
-        }
+        if (!surfaceReady) return
+        if (decoder != null && decoderWidth == width && decoderHeight == height) return
 
         val sps = csdSps ?: return
         val pps = csdPps ?: return
@@ -164,14 +206,12 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         format.setByteBuffer("csd-0", ByteBuffer.wrap(sps))
         format.setByteBuffer("csd-1", ByteBuffer.wrap(pps))
         format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, width * height)
-        
-        // Configure decoder for low latency and high operating rate
         try {
             format.setInteger("low-latency", 1)
             format.setInteger("operating-rate", 120)
-            format.setInteger("priority", 0) // 0 is real-time priority
+            format.setInteger("priority", 0)
         } catch (_: Exception) {}
-        
+
         val codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         codec.configure(format, surfaceView.holder.surface, null, 0)
         codec.start()
@@ -201,41 +241,32 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         codec.queueInputBuffer(inputIndex, 0, frameBytes.size, System.nanoTime() / 1_000, flags)
     }
 
-    private fun drainDecoder() {
-        val codec = decoder ?: return
+    private fun drainDecoder(): Boolean {
+        val codec = decoder ?: return false
         val bufferInfo = MediaCodec.BufferInfo()
         var lastOutputIndex = -1
         var lastPtsUs = 0L
+        var rendered = false
         while (true) {
             val outputIndex = codec.dequeueOutputBuffer(bufferInfo, 0)
             when {
                 outputIndex >= 0 -> {
-                    if (lastOutputIndex >= 0) {
-                        codec.releaseOutputBuffer(lastOutputIndex, false)
-                    }
+                    if (lastOutputIndex >= 0) codec.releaseOutputBuffer(lastOutputIndex, false)
                     lastOutputIndex = outputIndex
                     lastPtsUs = bufferInfo.presentationTimeUs
                 }
                 outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     Log.i(logTag, "Output format changed: ${codec.outputFormat}")
                 }
-                outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                    if (lastOutputIndex >= 0) {
-                        codec.releaseOutputBuffer(lastOutputIndex, true)
-                        if (frameCounter <= 5L || frameCounter % 120L == 0L) {
-                            Log.i(logTag, "Rendered output buffer, pts=$lastPtsUs")
-                        }
-                    }
-                    return
-                }
                 else -> {
                     if (lastOutputIndex >= 0) {
                         codec.releaseOutputBuffer(lastOutputIndex, true)
+                        rendered = true
                         if (frameCounter <= 5L || frameCounter % 120L == 0L) {
                             Log.i(logTag, "Rendered output buffer, pts=$lastPtsUs")
                         }
                     }
-                    return
+                    return rendered
                 }
             }
         }
@@ -243,19 +274,15 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     private fun releaseDecoder() {
         val codec = decoder ?: return
-        try {
-            codec.stop()
-        } catch (_: Exception) {
-        }
-        try {
-            codec.release()
-        } catch (_: Exception) {
-        }
+        try { codec.stop() } catch (_: Exception) {}
+        try { codec.release() } catch (_: Exception) {}
         decoder = null
         decoderWidth = 0
         decoderHeight = 0
         Log.i(logTag, "Decoder released")
     }
+
+    // ── NAL helpers ───────────────────────────────────────────────────────────
 
     private fun parseAvccNalUnits(payload: ByteArray): List<ByteArray> {
         val nalUnits = mutableListOf<ByteArray>()
@@ -267,9 +294,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 ((payload[offset + 2].toInt() and 0xFF) shl 8) or
                 (payload[offset + 3].toInt() and 0xFF)
             offset += 4
-            if (naluLength <= 0 || offset + naluLength > payload.size) {
-                break
-            }
+            if (naluLength <= 0 || offset + naluLength > payload.size) break
             nalUnits.add(payload.copyOfRange(offset, offset + naluLength))
             offset += naluLength
         }
@@ -278,37 +303,26 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     private fun buildAnnexBAccessUnit(nalUnits: List<ByteArray>): ByteArray {
         val filtered = nalUnits.filter { it.isNotEmpty() }
-        if (filtered.isEmpty()) {
-            return ByteArray(0)
-        }
+        if (filtered.isEmpty()) return ByteArray(0)
         var totalSize = 0
-        for (nalu in filtered) {
-            totalSize += 4 + nalu.size
-        }
+        for (nalu in filtered) totalSize += 4 + nalu.size
         val output = ByteArray(totalSize)
         var offset = 0
         for (nalu in filtered) {
-            output[offset] = 0
-            output[offset + 1] = 0
-            output[offset + 2] = 0
-            output[offset + 3] = 1
+            output[offset] = 0; output[offset + 1] = 0; output[offset + 2] = 0; output[offset + 3] = 1
             offset += 4
-            val size = nalu.size
-            System.arraycopy(nalu, 0, output, offset, size)
-            offset += size
+            System.arraycopy(nalu, 0, output, offset, nalu.size)
+            offset += nalu.size
         }
         return output
     }
 
-    private fun updateStatus(text: String) {
-        runOnUiThread {
-            statusView.text = text
-        }
-    }
+    // ── Misc ──────────────────────────────────────────────────────────────────
 
     private fun enterImmersiveMode() {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 }
