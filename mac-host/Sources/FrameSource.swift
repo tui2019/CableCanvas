@@ -428,7 +428,7 @@ private final class H264Encoder: @unchecked Sendable {
                 userInfo: [NSLocalizedDescriptionKey: "H.264 encode request failed (status=\(status))."]
             )
         }
-        let waitResult = semaphore.wait(timeout: .now() + 1.0)
+        let waitResult = semaphore.wait(timeout: .now() + 5.0)
         if waitResult == .timedOut {
             lock.lock()
             waitingSemaphore = nil
@@ -438,7 +438,7 @@ private final class H264Encoder: @unchecked Sendable {
             throw NSError(
                 domain: "CableCanvas.FrameSource",
                 code: 3030,
-                userInfo: [NSLocalizedDescriptionKey: "H.264 encoder callback timed out."]
+                userInfo: [NSLocalizedDescriptionKey: "H.264 encoder callback timed out after 5 seconds."]
             )
         }
         lock.lock()

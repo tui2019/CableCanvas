@@ -58,7 +58,10 @@ final class FrameStreamer: @unchecked Sendable {
                         )
                     }
                 } catch {
-                    print("[streamer] frame error: \(error.localizedDescription)")
+                    let code = (error as NSError).code
+                    if code != 3006 && code != 3030 {
+                        print("[streamer] frame error: \(error.localizedDescription)")
+                    }
                 }
             }
             timer.resume()
