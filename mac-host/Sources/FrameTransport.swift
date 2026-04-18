@@ -68,11 +68,9 @@ final class TcpFrameTransportServer: FrameTransportServer, @unchecked Sendable {
     }
 
     private func attachConnection(_ newConnection: NWConnection) {
-        if connection != nil, handshakeComplete {
-            newConnection.cancel()
-            return
+        if let existing = connection {
+            existing.cancel()
         }
-        if let existing = connection { existing.cancel() }
         connection = newConnection
         handshakeComplete = false
         sendInFlight = false

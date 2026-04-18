@@ -356,6 +356,12 @@ private final class H264Encoder: @unchecked Sendable {
             VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: cf)
         }
         
+        var keyIntervalDuration = 2.0
+        withUnsafePointer(to: &keyIntervalDuration) { ptr in
+            let cf = CFNumberCreate(nil, .doubleType, ptr)
+            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: cf)
+        }
+        
         // Limit bitrate to 16 Mbps to prevent TCP buffer bloat and latency spikes
         let bitRate = 16_000_000
         var bitRateValue = Int32(bitRate)

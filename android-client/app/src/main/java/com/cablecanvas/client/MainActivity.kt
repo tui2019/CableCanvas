@@ -39,9 +39,6 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
     private val logTag = "CableCanvas"
 
     @Volatile
-    private var running = true
-
-    @Volatile
     private var surfaceReady = false
 
     private var decoder: MediaCodec? = null
@@ -133,8 +130,7 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
 
     override fun onDestroy() {
         unregisterReceiver(exitReceiver)
-        running = false
-        receiverThread?.interrupt()
+        stopReceiverLoop()
         releaseDecoder()
         mediaSurface?.release()
         Log.i(logTag, "MainActivity destroyed")
@@ -153,6 +149,7 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
 
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
         surfaceReady = false
+        stopReceiverLoop()
         releaseDecoder()
         mediaSurface?.release()
         mediaSurface = null
@@ -179,11 +176,16 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
 
     // ── Receiver loop ─────────────────────────────────────────────────────────
 
+    private fun stopReceiverLoop() {
+        receiverThread?.interrupt()
+        receiverThread = null
+    }
+
     private fun startReceiverLoopIfNeeded() {
         if (receiverThread != null || !surfaceReady) return
         Log.i(logTag, "Starting receiver loop")
         receiverThread = Thread {
-            while (running) {
+            while (!Thread.currentThread().isInterrupted) {
                 showConnectingOverlay("Connecting...")
                 try {
                     FrameStreamClient(AdbTcpTransport()).use { client ->
