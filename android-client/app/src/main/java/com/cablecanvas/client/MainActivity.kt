@@ -8,11 +8,18 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Surface
 import android.view.TextureView
-import android.view.View
 import android.view.WindowManager
-import android.widget.TextView
+import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.ui.platform.ComposeView
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -32,11 +39,12 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
     private var surfaceReady = false
 
     private var decoder: MediaCodec? = null
-    private lateinit var textureView: TextureView
-    private lateinit var statusView: TextView
-    private lateinit var connectingComposeView: ComposeView
 
-    private var mediaSurface: Surface? = null // Holds the rendering surface for MediaCodec
+    // Compose State
+    private var videoStarted by mutableStateOf(false)
+    private var statusMessage by mutableStateOf("Connecting...")
+
+    private var mediaSurface: Surface? = null
     private var decoderWidth = 0
     private var decoderHeight = 0
     private var csdSps: ByteArray? = null
@@ -44,38 +52,49 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
     private var receiverThread: Thread? = null
     private var frameCounter = 0L
 
-    /** True after the first decoded frame is rendered – hides the connecting overlay. */
-    @Volatile
-    private var videoStarted = false
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        setContentView(R.layout.activity_main)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-            window.attributes.blurBehindRadius = 64 // Adjust 1-100 for blur intensity
+            window.attributes.blurBehindRadius = 64
             window.attributes = window.attributes
         }
 
-        textureView = findViewById(R.id.videoSurface)
-
-        // Ensure the TextureView allows the wallpaper to show through initially
-        textureView.isOpaque = false
-        textureView.alpha = 0f
-        textureView.surfaceTextureListener = this
-
-        statusView = findViewById(R.id.statusView)
-        connectingComposeView = findViewById(R.id.connectingComposeView)
-
-        // Inject the Compose UI
-        connectingComposeView.setContent {
-            ConnectingScreen()
-        }
-
         enterImmersiveMode()
+
+        setContent {
+            Box(modifier = Modifier.fillMaxSize()) {
+                val videoAlpha by animateFloatAsState(
+                    targetValue = if (videoStarted) 1f else 0f,
+                    label = "Video Alpha"
+                )
+                val overlayAlpha by animateFloatAsState(
+                    targetValue = if (videoStarted) 0f else 1f,
+                    label = "Overlay Alpha"
+                )
+
+                AndroidView(
+                    factory = { context ->
+                        TextureView(context).apply {
+                            isOpaque = false
+                            surfaceTextureListener = this@MainActivity
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(videoAlpha)
+                )
+
+                if (overlayAlpha > 0f) {
+                    Box(modifier = Modifier.fillMaxSize().alpha(overlayAlpha)) {
+                        ConnectingScreen()
+                    }
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -121,39 +140,15 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
 
     private fun showConnectingOverlay(status: String) {
         runOnUiThread {
-            if (connectingComposeView.visibility != View.VISIBLE) {
-                connectingComposeView.alpha = 1f // Reset alpha before showing
-                connectingComposeView.visibility = View.VISIBLE
-            }
-
-            // Fade the frozen video frame out smoothly over 500ms
-            if (videoStarted) {
-                textureView.animate()
-                    .alpha(0f)
-                    .setDuration(500)
-                    .start()
-            }
-
+            statusMessage = status
             videoStarted = false
         }
     }
 
     private fun hideConnectingOverlay() {
         if (videoStarted) return
-        videoStarted = true
         runOnUiThread {
-            // 1. Fade IN the live video stream smoothly over 500ms
-            textureView.animate()
-                .alpha(1f)
-                .setDuration(500)
-                .start()
-
-            // 2. Fade OUT the spinner and scrim over 500ms
-            connectingComposeView.animate()
-                .alpha(0f)
-                .setDuration(500)
-                .withEndAction { connectingComposeView.visibility = View.GONE }
-                .start()
+            videoStarted = true
         }
     }
 
@@ -164,11 +159,11 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
         Log.i(logTag, "Starting receiver loop")
         receiverThread = Thread {
             while (running) {
-                showConnectingOverlay(getString(R.string.status_connecting))
+                showConnectingOverlay("Connecting...")
                 try {
                     FrameStreamClient(AdbTcpTransport()).use { client ->
                         Log.i(logTag, "Transport connected")
-                        showConnectingOverlay(getString(R.string.status_connected))
+                        showConnectingOverlay("Connected")
                         client.readFrames { frame ->
                             frameCounter += 1
                             if (frameCounter <= 5L || frameCounter % 120L == 0L) {
@@ -213,7 +208,7 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
                 } catch (e: Exception) {
                     Log.e(logTag, "Receiver loop error", e)
                     releaseDecoder()
-                    showConnectingOverlay(getString(R.string.status_disconnected))
+                    showConnectingOverlay("Disconnected")
                     try {
                         Thread.sleep(1500)
                     } catch (_: InterruptedException) {
