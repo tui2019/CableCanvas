@@ -12,6 +12,7 @@ import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
@@ -69,10 +70,12 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
             Box(modifier = Modifier.fillMaxSize()) {
                 val videoAlpha by animateFloatAsState(
                     targetValue = if (videoStarted) 1f else 0f,
+                    animationSpec = tween(durationMillis = 800),
                     label = "Video Alpha"
                 )
                 val overlayAlpha by animateFloatAsState(
                     targetValue = if (videoStarted) 0f else 1f,
+                    animationSpec = tween(durationMillis = 800),
                     label = "Overlay Alpha"
                 )
 
