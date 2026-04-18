@@ -50,6 +50,8 @@ final class AdbService: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self else { return }
             for serial in self.connectedDeviceSerials() {
+                _ = self.run(["-s", serial, "shell", "am", "broadcast", "-a", "\(packageName).EXIT", "-p", packageName], timeout: 3)
+                // Fallback force-stop just in case the app was stuck or didn't receive the broadcast
                 _ = self.run(["-s", serial, "shell", "am", "force-stop", packageName], timeout: 3)
             }
         }

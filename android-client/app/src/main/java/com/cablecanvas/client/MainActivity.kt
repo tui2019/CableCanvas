@@ -1,5 +1,9 @@
 package com.cablecanvas.client
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.SurfaceTexture
 import android.media.MediaCodec
 import android.media.MediaFormat
@@ -21,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -53,8 +58,24 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
     private var receiverThread: Thread? = null
     private var frameCounter = 0L
 
+    private val exitReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == "com.cablecanvas.client.EXIT") {
+                finishAndRemoveTask()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        ContextCompat.registerReceiver(
+            this,
+            exitReceiver,
+            IntentFilter("com.cablecanvas.client.EXIT"),
+            ContextCompat.RECEIVER_EXPORTED
+        )
+
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
@@ -111,6 +132,7 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
     }
 
     override fun onDestroy() {
+        unregisterReceiver(exitReceiver)
         running = false
         receiverThread?.interrupt()
         releaseDecoder()
