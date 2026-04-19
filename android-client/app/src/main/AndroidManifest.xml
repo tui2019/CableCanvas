@@ -18,6 +18,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".RotateActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.CableCanvas.Translucent" />
     </application>
 
 </manifest>

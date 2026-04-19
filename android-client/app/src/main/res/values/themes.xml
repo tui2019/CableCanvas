@@ -6,4 +6,9 @@
         <item name="android:windowShowWallpaper">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
     </style>
+
+    <style name="Theme.CableCanvas.Translucent" parent="Theme.CableCanvas">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
 </resources>

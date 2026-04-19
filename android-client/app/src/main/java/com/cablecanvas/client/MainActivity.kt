@@ -252,6 +252,16 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
         if (!surfaceReady) return
         if (decoder != null && decoderWidth == width && decoderHeight == height) return
 
+        val isLandscape = width > height
+        val deviceIsLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        if (isLandscape != deviceIsLandscape) {
+            val intent = Intent(this@MainActivity, RotateActivity::class.java).apply {
+                putExtra("stream_landscape", isLandscape)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(intent)
+        }
+
         val sps = csdSps ?: return
         val pps = csdPps ?: return
         releaseDecoder()
