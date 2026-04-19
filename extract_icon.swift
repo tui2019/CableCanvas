@@ -7,7 +7,8 @@ NSColor.clear.set()
 NSRect(origin: .zero, size: size).fill()
 
 if let image = NSImage(systemSymbolName: "display.2", accessibilityDescription: nil) {
-    let config = NSImage.SymbolConfiguration(pointSize: 300, weight: .regular)
+    // Reduced point size from 300 to 200 to add padding for the adaptive icon safe zone
+    let config = NSImage.SymbolConfiguration(pointSize: 200, weight: .regular)
     if let scaledImage = image.withSymbolConfiguration(config) {
         
         let tintedImage = NSImage(size: scaledImage.size)
@@ -33,5 +34,5 @@ if let tiff = outputImage.tiffRepresentation,
    let bitmap = NSBitmapImageRep(data: tiff),
    let png = bitmap.representation(using: .png, properties: [:]) {
     try? png.write(to: URL(fileURLWithPath: "ic_launcher_foreground.png"))
-    print("Saved ic_launcher_foreground.png")
+    print("Saved ic_launcher_foreground.png with more padding")
 }
