@@ -312,7 +312,7 @@ final class AppViewModel: ObservableObject {
         }
         let adbService = self.adbService
         guard let apkPath = resolveExistingAndroidClientApk(androidClientDir: androidClientDir) else {
-            statusText = "Android client APK not found. Put a prebuilt APK in mac-host/prebuilt/app-debug.apk."
+            statusText = "Android client APK not found. Put a prebuilt APK in mac-host/prebuilt/app.apk."
             return false
         }
 
@@ -360,13 +360,12 @@ final class AppViewModel: ObservableObject {
             .path
         let cwd = FileManager.default.currentDirectoryPath
         let candidates = [
-            (cwd as NSString).appendingPathComponent("prebuilt/app-debug.apk"),
-            (cwd as NSString).appendingPathComponent("mac-host/prebuilt/app-debug.apk"),
-            (sourceBase as NSString).appendingPathComponent("mac-host/prebuilt/app-debug.apk"),
+            (cwd as NSString).appendingPathComponent("prebuilt/app.apk"),
+            (cwd as NSString).appendingPathComponent("mac-host/prebuilt/app.apk"),
+            (sourceBase as NSString).appendingPathComponent("mac-host/prebuilt/app.apk"),
             (sourceBase as NSString).appendingPathComponent("mac-host/prebuilt/CableCanvas.apk"),
-            (androidClientDir as NSString).appendingPathComponent("app/build/outputs/apk/debug/app-debug.apk"),
-            (androidClientDir as NSString).appendingPathComponent("app-debug.apk"),
-            (androidClientDir as NSString).appendingPathComponent("prebuilt/app-debug.apk"),
+            (androidClientDir as NSString).appendingPathComponent("app.apk"),
+            (androidClientDir as NSString).appendingPathComponent("prebuilt/app.apk"),
             (androidClientDir as NSString).appendingPathComponent("prebuilt/CableCanvas.apk"),
         ]
         for candidate in candidates where FileManager.default.fileExists(atPath: candidate) {
