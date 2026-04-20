@@ -1,70 +1,26 @@
-# CableCanvas (v1)
+# CableCanvas
 
-CableCanvas is a wired Mac host -> Android client second-display prototype.
+CableCanvas is a low-latency, wired second-display solution that turns your Android tablet or phone into a dedicated monitor for your Mac.
 
-This first version validates protocol + transport by repeatedly streaming one JPEG frame.
+It uses native macOS APIs to create a "real" virtual display—meaning your Mac treats the Android device as a hardware monitor with its own resolution, HiDPI (Retina) support, and desktop space.
 
-## Architecture
+## Setup
 
-- **Protocol layer**: frame envelope (`CCF1` magic + length + payload).
-- **Transport layer**: socket connection provider.
-- **App layer**: send/receive loop and rendering.
+1. **Android Device**: Enable **USB Debugging** in Developer Options and connect it to your Mac via USB.
+2. **Mac Host**: Download the latest `CableCanvas.dmg` from the [Releases](#) page and drag it to your Applications folder.
+3. **Launch & Stream**: Open CableCanvas on your Mac. Once a device is connected and authorized, the Mac app will automatically detect it and show a popup asking to start the stream.
+4. **Automatic Install**: On the first launch, the app will also automatically prompt to install the Android receiver app onto your connected device if it isn't already there.
 
-This separation makes transport replacement straightforward later (ADB tunnel -> direct USB/AOA).
+## How it Works
 
-## v1 transport
+CableCanvas is designed for performance and universal compatibility:
 
-ADB reverse over USB:
+- **ADB Transport**: Unlike other solutions that rely on USB Tethering (which often fails on macOS due to missing NCM protocol support on many Android devices), CableCanvas uses an ADB tunnel. This ensures it "just works" on virtually any Android device with a stable, high-bandwidth connection.
+- **H.264 Encoding**: The host captures the virtual display using `ScreenCaptureKit` and encodes it in real-time using macOS hardware acceleration (`VideoToolbox`) for minimal CPU usage.
+- **Native Virtual Display**: It utilizes the `CGVirtualDisplay` API (macOS 13+) to create a true virtual monitor, allowing for native resolution scaling and proper desktop management.
+- **Zero-Config**: The Mac app handles the entire lifecycle—detecting the device, setting up the network tunnel, and launching the Android app—so you don't have to touch the terminal.
 
-```bash
-adb reverse tcp:27183 tcp:27183
-```
+## Project Structure
 
-Android app connects to `127.0.0.1:27183`; ADB carries traffic over USB to the host process.
-
-## Project layout
-
-- `host/` macOS sender (Python 3)
-- `mac-host/` native macOS tray host app scaffold (Swift/AppKit/SwiftUI)
-- `android-client/` Android receiver app (Kotlin)
-
-## Run v1
-
-1. Enable USB debugging on the tablet and authorize the Mac.
-2. Set up tunnel:
-   ```bash
-   cd host
-   ./setup_adb.sh
-   ```
-3. Start sender:
-   ```bash
-   python3 send_jpeg_stream.py --image /absolute/path/to/frame.jpg --fps 10
-   ```
-4. Open `android-client` in Android Studio, run app on the tablet.
-
-## Native macOS host (in progress)
-
-`mac-host/` contains a native menu bar host app foundation with:
-
-- tray/menu bar presence
-- floating control panel window
-- separated modules for protocol (`FrameProtocol`) and transport (`FrameTransport`)
-- selectable stream source (`JPEG Image` or `Main Display` live capture)
-- ADB device monitoring with optional auto `adb reverse` + Android client launch
-- virtual monitor create/remove controls (native bridge)
-
-For `Main Display` mode:
-- the app requests Screen Recording permission when starting stream
-
-For virtual monitor mode:
-- configurable name, resolution, refresh rate, HiDPI and mirror mode
-- uses a native bridge around macOS virtual display APIs
-
-Run locally:
-
-```bash
-cd mac-host
-swift run
-```
-
-The tray icon appears in the menu bar. Use **Show Controls** to open the floating panel.
+- `mac-host/`: Native Swift menu bar app and H.264 encoder.
+- `android-client/`: Kotlin-based receiver app using hardware decoding.
