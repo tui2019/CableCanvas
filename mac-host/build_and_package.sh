@@ -21,10 +21,14 @@ if [[ ! -f "$ICON_PATH" ]]; then
   exit 1
 fi
 
-echo "Building macOS binary..."
-swift build -c release
+echo "Building macOS binary (Universal: arm64 + x86_64)..."
+swift build -c release --arch arm64 --arch x86_64
 
-BIN_PATH="$(find "$SCRIPT_DIR/.build" -type f -name CableCanvasHost | grep '/release/' | head -n1)"
+BIN_PATH="$SCRIPT_DIR/.build/apple/Products/Release/CableCanvasHost"
+if [[ ! -f "$BIN_PATH" ]]; then
+  # Fallback if the path above is not where it ended up
+  BIN_PATH="$(find "$SCRIPT_DIR/.build" -type f -name CableCanvasHost | grep '/apple/' | grep '/release/' | head -n1)"
+fi
 if [[ -z "$BIN_PATH" ]]; then
   echo "Could not locate release binary (CableCanvasHost)." >&2
   exit 1
