@@ -6,6 +6,7 @@ final class AdbService: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var knownDevices = Set<String>()
     private let logger = Logger(subsystem: "CableCanvasHost", category: "AdbService")
+    private lazy var adbExecutable = resolveAdbExecutable()
 
     func startMonitoring(
         onNewDevice: @escaping @Sendable (String) -> Void,
@@ -325,11 +326,40 @@ final class AdbService: @unchecked Sendable {
 
     @discardableResult
     private func run(_ arguments: [String], timeout: TimeInterval = 5) -> String {
-        runProcess(
-            executable: "/usr/bin/env",
-            arguments: ["adb"] + arguments,
+        if adbExecutable == "/usr/bin/env" {
+            return runProcess(
+                executable: "/usr/bin/env",
+                arguments: ["adb"] + arguments,
+                timeout: timeout
+            )
+        }
+        return runProcess(
+            executable: adbExecutable,
+            arguments: arguments,
             timeout: timeout
         )
+    }
+
+    private func resolveAdbExecutable() -> String {
+        let env = ProcessInfo.processInfo.environment
+        let sdkRoots = [
+            env["ANDROID_SDK_ROOT"],
+            env["ANDROID_HOME"],
+        ].compactMap { $0 }
+
+        var candidates = sdkRoots.map { ($0 as NSString).appendingPathComponent("platform-tools/adb") }
+        candidates.append((NSHomeDirectory() as NSString).appendingPathComponent("Library/Android/sdk/platform-tools/adb"))
+        candidates.append("/opt/homebrew/bin/adb")
+        candidates.append("/usr/local/bin/adb")
+        candidates.append("/usr/bin/adb")
+
+        for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate) {
+            logger.info("Using adb at \(candidate, privacy: .public)")
+            return candidate
+        }
+
+        logger.info("Falling back to PATH lookup for adb")
+        return "/usr/bin/env"
     }
 
     @discardableResult

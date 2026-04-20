@@ -306,13 +306,10 @@ final class AppViewModel: ObservableObject {
         isInstallingAndroidClient = true
         defer { isInstallingAndroidClient = false }
 
-        guard let androidClientDir = resolveAndroidClientDirectory() else {
-            statusText = "Could not find android-client project directory."
-            return false
-        }
         let adbService = self.adbService
+        let androidClientDir = resolveAndroidClientDirectory()
         guard let apkPath = resolveExistingAndroidClientApk(androidClientDir: androidClientDir) else {
-            statusText = "Android client APK not found. Put a prebuilt APK in mac-host/prebuilt/app.apk."
+            statusText = "Android client APK not found. Bundle app.apk inside CableCanvas.app/Contents/Resources or place it in mac-host/prebuilt/app.apk."
             return false
         }
 
@@ -352,22 +349,31 @@ final class AppViewModel: ObservableObject {
         return nil
     }
 
-    private func resolveExistingAndroidClientApk(androidClientDir: String) -> String? {
+    private func resolveExistingAndroidClientApk(androidClientDir: String?) -> String? {
         let sourceBase = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .path
         let cwd = FileManager.default.currentDirectoryPath
-        let candidates = [
+        let androidCandidates: [String] = androidClientDir.map { dir in
+            [
+                (dir as NSString).appendingPathComponent("app.apk"),
+                (dir as NSString).appendingPathComponent("prebuilt/app.apk"),
+                (dir as NSString).appendingPathComponent("prebuilt/CableCanvas.apk"),
+            ]
+        } ?? []
+        let bundleResources = Bundle.main.resourceURL?.path
+        var candidates = [
             (cwd as NSString).appendingPathComponent("prebuilt/app.apk"),
             (cwd as NSString).appendingPathComponent("mac-host/prebuilt/app.apk"),
             (sourceBase as NSString).appendingPathComponent("mac-host/prebuilt/app.apk"),
             (sourceBase as NSString).appendingPathComponent("mac-host/prebuilt/CableCanvas.apk"),
-            (androidClientDir as NSString).appendingPathComponent("app.apk"),
-            (androidClientDir as NSString).appendingPathComponent("prebuilt/app.apk"),
-            (androidClientDir as NSString).appendingPathComponent("prebuilt/CableCanvas.apk"),
         ]
+        if let bundleResources {
+            candidates.insert((bundleResources as NSString).appendingPathComponent("app.apk"), at: 0)
+        }
+        candidates.append(contentsOf: androidCandidates)
         for candidate in candidates where FileManager.default.fileExists(atPath: candidate) {
             return candidate
         }
@@ -411,9 +417,9 @@ final class AppViewModel: ObservableObject {
         }
 
         if !ScreenCapturePermission.isAuthorized() {
-            let granted = ScreenCapturePermission.requestAccess()
-            guard granted else {
-                statusText = "Screen Recording permission is required for display streaming."
+            _ = ScreenCapturePermission.requestAccessOncePerLaunchIfNeeded()
+            guard ScreenCapturePermission.isAuthorized() else {
+                statusText = "Screen Recording permission is required. Grant it in System Settings, then relaunch CableCanvas."
                 return
             }
         }
