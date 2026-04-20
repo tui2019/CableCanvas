@@ -26,7 +26,7 @@ struct AppSettings: Codable, Equatable {
     var virtualDisplayHeight: Int = 1080
     var virtualDisplayRefreshRate: Int = 30
     var virtualDisplayPpi: Int = 110
-    var virtualDisplayHiDPI: Bool = false
+    var virtualDisplayHiDPI: Bool = true
     var virtualDisplayMirrorMain: Bool = false
     var autoConfigureAdbReverse: Bool = true
     var autoLaunchAndroidClient: Bool = true

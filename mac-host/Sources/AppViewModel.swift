@@ -49,6 +49,10 @@ final class AppViewModel: ObservableObject {
             loadedSettings.virtualDisplayMirrorMain = false
             settingsStore.save(loadedSettings)
         }
+        if !loadedSettings.virtualDisplayHiDPI {
+            loadedSettings.virtualDisplayHiDPI = true
+            settingsStore.save(loadedSettings)
+        }
         self.settingsStore = settingsStore
 
         let transport = TcpFrameTransportServer()
@@ -145,6 +149,7 @@ final class AppViewModel: ObservableObject {
     func createVirtualDisplay() {
         settings.virtualDisplayMirrorMain = false
         settings.virtualDisplayRefreshRate = 30
+        settings.virtualDisplayHiDPI = true
 
         let serial = lastDetectedSerial ?? adbService.firstConnectedDeviceSerial()
         guard let serial else {
