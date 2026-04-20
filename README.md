@@ -7,7 +7,7 @@ It uses native macOS APIs to create a "real" virtual display—meaning your Mac 
 ## Setup
 
 1. **Android Device**: Enable **USB Debugging** in Developer Options and connect it to your Mac via USB.
-2. **Mac Host**: Download the latest `CableCanvas.dmg` from the [Releases](#) page and drag it to your Applications folder.
+2. **Mac Host**: Download the latest `CableCanvas.dmg` from the [Releases](https://github.com/tui2019/CableCanvas/releases) page and drag it to your Applications folder.
 3. **Launch & Stream**: Open CableCanvas on your Mac. Once a device is connected and authorized, the Mac app will automatically detect it and show a popup asking to start the stream.
 4. **Automatic Install**: On the first launch, the app will also automatically prompt to install the Android receiver app onto your connected device if it isn't already there.
 
